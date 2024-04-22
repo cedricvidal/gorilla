@@ -8,6 +8,9 @@ import PyPDF2
 import random
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai.embeddings import OpenAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()  # take environment variables from .env.
 
 DocType = Literal["api", "pdf", "json", "txt"]
 
