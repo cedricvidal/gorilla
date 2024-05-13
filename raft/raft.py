@@ -17,6 +17,7 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 from client_utils import build_openai_client, build_langchain_embeddings
 from math import ceil
 from format import DatasetConverter, datasetFormats, outputDatasetTypes
+from git_utils import get_git_path_hash, is_git_available
 
 log_setup()
 
@@ -297,6 +298,10 @@ def main():
 
     # run code
     args = get_args()
+
+    # log git hash for RAFT folder to ease troubleshooting logs
+    if logger.isEnabledFor(logging.INFO) and is_git_available():
+        logger.info(f"RAFT version: {get_git_path_hash(os.path.dirname(__file__))}")
 
     # Validate arguments
     if args.output_chat_system_prompt and args.output_format != "chat":
