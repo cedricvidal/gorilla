@@ -2,7 +2,7 @@ import os
 import json
 #from datetime import datetime
 from promptflow.core import AzureOpenAIModelConfiguration
-from promptflow.evals.evaluators import RelevanceEvaluator, GroundednessEvaluator, FluencyEvaluator, CoherenceEvaluator
+from promptflow.evals.evaluators import RelevanceEvaluator, GroundednessEvaluator, FluencyEvaluator, CoherenceEvaluator, SimilarityEvaluator
 #from promptflow.evals.evaluate import evaluate
 from dotenv import load_dotenv
 import argparse
@@ -64,6 +64,7 @@ def evaluate_local(model_config, data_path):
         FluencyEvaluator(model_config),
         CoherenceEvaluator(model_config),
         GroundednessEvaluator(model_config),
+        SimilarityEvaluator(model_config),
     ]
 
     def evaluate_row(row):
