@@ -10,6 +10,8 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from logconf import log_setup
+from tenacity import retry, wait_exponential, retry_if_exception_type
+from openai import RateLimitError
 
 logger = logging.getLogger("pfeval")
 
@@ -67,6 +69,16 @@ def evaluate_local(model_config, data_path):
         SimilarityEvaluator(model_config),
     ]
 
+    @retry(wait=wait_exponential(multiplier=1, min=10, max=120), reraise=True, retry=retry_if_exception_type(RateLimitError))
+    def evaluate_row_with(row, evaluator):
+        result = evaluator(
+            question=row['question'],
+            answer=row['final_answer'],
+            context=row['context'],
+            ground_truth=row['gold_answer']
+        )
+        return result
+
     def evaluate_row(row):
         output = {
             'query': row['question'], 
@@ -74,18 +86,14 @@ def evaluate_local(model_config, data_path):
             'context': row['context']
         }
         for evaluator in evaluators:
-            result = evaluator(
-                question=row['question'],
-                answer=row['gold_answer'],
-                context=row['context']
-            )
+            result = evaluate_row_with(row, evaluator)
             output.update(result)
         return output
 
     results = []
     futures = []
     with tqdm(total=len(data)) as pbar:
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             for row in data:
                 futures.append(executor.submit(evaluate_row, row))
             for future in as_completed(futures):
@@ -109,9 +117,9 @@ if __name__ == "__main__":
     api_version=os.environ["OPENAI_API_VERSION"]
     azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"]
 
-    logger.info(f"deployment=f{deployment}")
-    logger.info(f"api_version=f{api_version}")
-    logger.info(f"azure_endpoint=f{azure_endpoint}")
+    logger.info(f"deployment={deployment}")
+    logger.info(f"api_version={api_version}")
+    logger.info(f"azure_endpoint={azure_endpoint}")
 
     model_config = AzureOpenAIModelConfiguration(
             azure_deployment=deployment,
