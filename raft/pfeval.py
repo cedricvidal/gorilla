@@ -79,7 +79,7 @@ def evaluate_local(model_config, data_path):
         )
         return result
 
-    def evaluate_row(row):
+    def evaluate_row(row, pbar):
         output = {
             'query': row['question'], 
             'response': row['gold_answer'], 
@@ -87,18 +87,18 @@ def evaluate_local(model_config, data_path):
         }
         for evaluator in evaluators:
             result = evaluate_row_with(row, evaluator)
-            output.update(result)
-        return output
+            row.update(result)
+            pbar.update(1)
+        return row
 
     results = []
     futures = []
-    with tqdm(total=len(data)) as pbar:
+    with tqdm(total=len(data) * len(evaluators)) as pbar:
         with ThreadPoolExecutor(max_workers=2) as executor:
             for row in data:
-                futures.append(executor.submit(evaluate_row, row))
+                futures.append(executor.submit(evaluate_row, row, pbar))
             for future in as_completed(futures):
                 results.append(future.result())
-                pbar.update(1)
 
     return results
 
