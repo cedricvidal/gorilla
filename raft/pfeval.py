@@ -13,6 +13,7 @@ from logconf import log_setup
 from tenacity import retry, wait_exponential, retry_if_exception_type
 from openai import RateLimitError
 from client_utils import build_openai_client
+from openai import OpenAI
 
 logger = logging.getLogger("pfeval")
 
@@ -31,7 +32,19 @@ def get_args() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+base_url=os.environ["EVAL_OPENAI_BASE_URL"]
+api_key=os.environ["EVAL_OPENAI_API_KEY"]
+api_version=os.environ["EVAL_OPENAI_DEPLOYMENT"]
+
+print(f"base_url={base_url}")
+print(f"api_key={api_key}")
+print(f"api_version={api_version}")
+
 client = build_openai_client("EVAL")
+#client = OpenAI(
+#    base_url=os.environ["EVAL_OPENAI_BASE_URL"],
+#    api_key=os.environ["EVAL_OPENAI_API_KEY"],
+#)
 
 def get_answer(context, question):
     response = client.completions.create(
@@ -47,7 +60,7 @@ def get_answer(context, question):
 def format_prompt(context, question):
     return f"{context}\n{question}"
 
-def evaluate_aistudio(model_config, project_scope, data_path):
+def evaluate_aistudio(model_config, project_scope, project_scope_report, data_path):
     # create unique id for each run with date and time
     time_str = datetime.now().strftime("%Y%m%d%H%M%S")
     run_id = f"chat_evaluation_sdk_{time_str}"
@@ -56,7 +69,8 @@ def evaluate_aistudio(model_config, project_scope, data_path):
     result = evaluate(
         evaluation_name=run_id,
         data=data_path,
-        target=get_answer,
+        #target=get_answer,
+        azure_ai_project=project_scope_report,
         evaluators={
             "similarity": SimilarityEvaluator(model_config),
             "groundedness": GroundednessEvaluator(project_scope=project_scope),
@@ -70,18 +84,19 @@ def evaluate_aistudio(model_config, project_scope, data_path):
             },
         },
     )
+    print(f"studio_url=f{result['studio_url']}")
     return result
 
-def evaluate_local(model_config, data_path):
+def evaluate_local(model_config, project_scope, project_scope_report, data_path):
     data = []
     with open(data_path) as f:
         for line in f:
             data.append(json.loads(line))
 
     evaluators = [
-        RelevanceEvaluator(model_config),
-        FluencyEvaluator(model_config),
-        CoherenceEvaluator(model_config),
+#        RelevanceEvaluator(model_config),
+#        FluencyEvaluator(model_config),
+#        CoherenceEvaluator(model_config),
         GroundednessEvaluator(model_config),
         SimilarityEvaluator(model_config),
     ]
@@ -92,16 +107,11 @@ def evaluate_local(model_config, data_path):
             question=row['question'],
             answer=row['final_answer'],
             context=row['context'],
-            ground_truth=row['gold_answer']
+            ground_truth=row['gold_final_answer']
         )
         return result
 
     def evaluate_row(row, pbar):
-        output = {
-            'query': row['question'], 
-            'response': row['gold_answer'], 
-            'context': row['context']
-        }
         for evaluator in evaluators:
             result = evaluate_row_with(row, evaluator)
             row.update(result)
@@ -130,10 +140,10 @@ if __name__ == "__main__":
     logger.info("Loading model configuration")
 
     # Model config
-    deployment = os.environ["EVAL_AZURE_OPENAI_ENDPOINT_EVALUATORS"]
-    api_key=os.environ["EVAL_AZURE_OPENAI_API_KEY_EVALUATORS"]
-    api_version=os.environ["EVAL_OPENAI_API_VERSION_EVALUATORS"]
-    azure_endpoint=os.environ["EVAL_AZURE_OPENAI_DEPLOYMENT_EVALUATORS"]
+    azure_endpoint = os.environ["SCORE_AZURE_OPENAI_ENDPOINT"]
+    api_key = os.environ["SCORE_AZURE_OPENAI_API_KEY"]
+    api_version = os.environ["SCORE_OPENAI_API_VERSION"]
+    deployment = os.environ["SCORE_AZURE_OPENAI_DEPLOYMENT"]
 
     logger.info(f"deployment={deployment}")
     logger.info(f"api_version={api_version}")
@@ -154,7 +164,22 @@ if __name__ == "__main__":
             api_version=api_version,
             azure_endpoint=azure_endpoint
         )
+
     project_scope = {
+        "subscription_id": subscription_id,
+        "resource_group_name": resource_group_name,
+        "project_name": project_name,
+    }
+
+    subscription_id = os.environ["REPORT_SUB_ID"]
+    resource_group_name = os.environ["REPORT_GROUP"]
+    project_name = os.environ["REPORT_PROJECT_NAME"]
+
+    print(f"report subscription_id={subscription_id}")
+    print(f"report resource_group_name={resource_group_name}")
+    print(f"report project_name={project_name}")
+
+    project_scope_report = {
         "subscription_id": subscription_id,
         "resource_group_name": resource_group_name,
         "project_name": project_name,
@@ -165,12 +190,15 @@ if __name__ == "__main__":
 
     modes = {"local": evaluate_local, "remote": evaluate_aistudio}
     evaluate_func = modes[args.mode]
-    eval_result = evaluate_func(model_config=model_config, data_path=args.input, project_scope=project_scope)
+    logger.info(f"Evaluating {args.input} with mode {args.mode}")
+    logger.info(f"Output file will be saved to {args.output}")
+    eval_result = evaluate_func(model_config=model_config, data_path=args.input, project_scope=project_scope, project_scope_report=project_scope_report)
 
     end=time.time()
     logger.info(f"Finished evaluate in {end - start}s")
     logger.info(f"Writing {len(eval_result)} results to {args.output}")
 
     #save evaluation results to a JSONL file
-    with jsonlines.open(args.output, 'w') as writer:
-        writer.write_all(eval_result)
+    if args.mode == "local":
+        with jsonlines.open(args.output, 'w') as writer:
+            writer.write_all(eval_result)
