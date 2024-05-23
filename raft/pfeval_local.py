@@ -114,7 +114,12 @@ def evaluate_local(model_config, project_scope, project_scope_report, data_path,
 
     def evaluate_row(row, pbar):
         for evaluator in evaluators:
-            result = evaluate_row_with(row, evaluator)
+            try:
+                result = evaluate_row_with(row, evaluator)
+            except Exception as e:
+                result = {
+                    "error": str(e)
+                }
             row.update(result)
             pbar.update(1)
         return row
