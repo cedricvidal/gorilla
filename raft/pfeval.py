@@ -1,9 +1,9 @@
 import os
 import json
-#from datetime import datetime
+from datetime import datetime
 from promptflow.core import AzureOpenAIModelConfiguration
 from promptflow.evals.evaluators import RelevanceEvaluator, GroundednessEvaluator, FluencyEvaluator, CoherenceEvaluator, SimilarityEvaluator
-#from promptflow.evals.evaluate import evaluate
+from promptflow.evals.evaluate import evaluate
 from dotenv import load_dotenv
 import argparse
 from tqdm import tqdm
@@ -12,6 +12,7 @@ import logging
 from logconf import log_setup
 from tenacity import retry, wait_exponential, retry_if_exception_type
 from openai import RateLimitError
+from client_utils import build_openai_client
 
 logger = logging.getLogger("pfeval")
 
@@ -25,35 +26,51 @@ def get_args() -> argparse.Namespace:
 
     parser.add_argument("--input", type=str, default="input.jsonl", help="The input data JSONL file to load")
     parser.add_argument("--output", type=str, default="output.jsonl", help="The output data JSONL file to export to")
+    parser.add_argument("--mode", type=str, default="local", help="local or remote")
 
     args = parser.parse_args()
     return args
 
-#def evaluate_aistudio(model_config, data_path):
-#    # create unique id for each run with date and time
-#    run_prefix = datetime.now().strftime("%Y%m%d%H%M%S")
-#    run_id = f"{run_prefix}_chat_evaluation_sdk"    
-#    print(run_id)
-#
-#    result = evaluate(
-#        evaluation_name=run_id,
-#        data=data_path,
-#        evaluators={
-#            #"violence": violence_eval,
-#            "relevance": RelevanceEvaluator(model_config),
-#            "fluency": FluencyEvaluator(model_config),
-#            "coherence": CoherenceEvaluator(model_config),
-#            "groundedness": GroundednessEvaluator(model_config),
-#        },
-#        evaluator_config={
-#            "defaults": {
-#                "question": "${data.question}",
-#                "answer": "${data.gold_answer}",
-#                "context": "${data.context}",
-#            },
-#        },
-#    )
-#    return result
+client = build_openai_client("EVAL")
+
+def get_answer(context, question):
+    response = client.completions.create(
+        model="Llama-2-7b-raft-bats-18k-unrrr",
+        prompt=format_prompt(context, question),
+        temperature=0.2,
+        max_tokens=1024,
+        stop='<STOP>'
+    )
+    answer = response.choices[0].text
+    return {"answer": answer}
+
+def format_prompt(context, question):
+    return f"{context}\n{question}"
+
+def evaluate_aistudio(model_config, project_scope, data_path):
+    # create unique id for each run with date and time
+    time_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    run_id = f"chat_evaluation_sdk_{time_str}"
+    print(run_id)
+
+    result = evaluate(
+        evaluation_name=run_id,
+        data=data_path,
+        target=get_answer,
+        evaluators={
+            "similarity": SimilarityEvaluator(model_config),
+            "groundedness": GroundednessEvaluator(project_scope=project_scope),
+        },
+        evaluator_config={
+            "defaults": {
+                "question": "${data.question}",
+                "answer": "${target.answer}",
+                "ground_truth": "${data.gold_final_answer}",
+                "context": "${data.context}",
+            },
+        },
+    )
+    return result
 
 def evaluate_local(model_config, data_path):
     data = []
@@ -112,14 +129,24 @@ if __name__ == "__main__":
     # Initialize Azure OpenAI Connection
     logger.info("Loading model configuration")
 
-    deployment = os.environ["AZURE_OPENAI_DEPLOYMENT"]
-    api_key=os.environ["AZURE_OPENAI_API_KEY"]
-    api_version=os.environ["OPENAI_API_VERSION"]
-    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"]
+    # Model config
+    deployment = os.environ["EVAL_AZURE_OPENAI_ENDPOINT_EVALUATORS"]
+    api_key=os.environ["EVAL_AZURE_OPENAI_API_KEY_EVALUATORS"]
+    api_version=os.environ["EVAL_OPENAI_API_VERSION_EVALUATORS"]
+    azure_endpoint=os.environ["EVAL_AZURE_OPENAI_DEPLOYMENT_EVALUATORS"]
 
     logger.info(f"deployment={deployment}")
     logger.info(f"api_version={api_version}")
     logger.info(f"azure_endpoint={azure_endpoint}")
+
+    # Project Scope
+    subscription_id=os.environ["GROUNDEDNESS_SUB_ID"]
+    resource_group_name=os.environ["GROUNDEDNESS_GROUP"]
+    project_name=os.environ["GROUNDEDNESS_PROJECT_NAME"]
+
+    logger.info(f"subscription_id={subscription_id}")
+    logger.info(f"resource_group_name={resource_group_name}")
+    logger.info(f"project_name={project_name}")
 
     model_config = AzureOpenAIModelConfiguration(
             azure_deployment=deployment,
@@ -127,11 +154,18 @@ if __name__ == "__main__":
             api_version=api_version,
             azure_endpoint=azure_endpoint
         )
+    project_scope = {
+        "subscription_id": subscription_id,
+        "resource_group_name": resource_group_name,
+        "project_name": project_name,
+    }
 
     start=time.time()
     logger.info(f"Starting evaluate...")
 
-    eval_result = evaluate_local(model_config, data_path=args.input)
+    modes = {"local": evaluate_local, "remote": evaluate_aistudio}
+    evaluate_func = modes[args.mode]
+    eval_result = evaluate_func(model_config=model_config, data_path=args.input, project_scope=project_scope)
 
     end=time.time()
     logger.info(f"Finished evaluate in {end - start}s")
