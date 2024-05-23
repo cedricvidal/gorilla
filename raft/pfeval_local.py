@@ -28,7 +28,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--input", type=str, default="input.jsonl", help="The input data JSONL file to load")
     parser.add_argument("--output", type=str, default="output.jsonl", help="The output data JSONL file to export to")
     parser.add_argument("--mode", type=str, default="local", help="local or remote")
-    parser.add_argument("--workers", type=int, default="local", help="Number of worker threads in local mode")
+    parser.add_argument("--workers", type=int, default="2", help="Number of worker threads in local mode")
 
     args = parser.parse_args()
     return args
