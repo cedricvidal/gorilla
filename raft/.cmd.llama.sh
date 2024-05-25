@@ -1,0 +1,11 @@
+python3 raft.py \
+    --datapath $PWD/sample_data/UC_Berkeley_short.pdf \
+    --output $PWD/output/ucb_short_l3_70b \
+    --distractors 3 \
+    --doctype pdf \
+    --chunk_size 512 \
+    --questions 2 \
+    --checkpoint-size 1 \
+    --system-prompt-key llama \
+    --completion_model Meta-Llama-3-70B-Instruct \
+    --embedding_model text-embedding-ada-002
