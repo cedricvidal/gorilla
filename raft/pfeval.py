@@ -9,10 +9,8 @@ import argparse
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-from logconf import log_setup
 from tenacity import retry, wait_exponential, retry_if_exception_type
 from openai import RateLimitError
-from client_utils import build_openai_client
 from openai import OpenAI
 
 logger = logging.getLogger("pfeval")
@@ -27,7 +25,6 @@ def get_args() -> argparse.Namespace:
 
     parser.add_argument("--input", type=str, default="input.jsonl", help="The input data JSONL file to load")
     parser.add_argument("--output", type=str, default="output.jsonl", help="The output data JSONL file to export to")
-    parser.add_argument("--mode", type=str, default="local", help="local or remote")
 
     args = parser.parse_args()
     return args
@@ -40,11 +37,10 @@ print(f"base_url={base_url}")
 print(f"api_key={api_key}")
 print(f"api_version={api_version}")
 
-client = build_openai_client("EVAL")
-#client = OpenAI(
-#    base_url=os.environ["EVAL_OPENAI_BASE_URL"],
-#    api_key=os.environ["EVAL_OPENAI_API_KEY"],
-#)
+client = OpenAI(
+    base_url=os.environ["EVAL_OPENAI_BASE_URL"],
+    api_key=os.environ["EVAL_OPENAI_API_KEY"],
+)
 
 def get_answer(context, question):
     response = client.completions.create(
@@ -79,7 +75,7 @@ def evaluate_aistudio(model_config, project_scope, project_scope_report, data_pa
             "defaults": {
                 "question": "${data.question}",
                 "answer": "${target.answer}",
-                "ground_truth": "${data.gold_final_answer}",
+                "ground_truth": "${data.ground_truth}",
                 "context": "${data.context}",
             },
         },
@@ -87,53 +83,10 @@ def evaluate_aistudio(model_config, project_scope, project_scope_report, data_pa
     print(f"studio_url=f{result['studio_url']}")
     return result
 
-def evaluate_local(model_config, project_scope, project_scope_report, data_path):
-    data = []
-    with open(data_path) as f:
-        for line in f:
-            data.append(json.loads(line))
-
-    evaluators = [
-#        RelevanceEvaluator(model_config),
-#        FluencyEvaluator(model_config),
-#        CoherenceEvaluator(model_config),
-        GroundednessEvaluator(model_config),
-        SimilarityEvaluator(model_config),
-    ]
-
-    @retry(wait=wait_exponential(multiplier=1, min=10, max=120), reraise=True, retry=retry_if_exception_type(RateLimitError))
-    def evaluate_row_with(row, evaluator):
-        result = evaluator(
-            question=row['question'],
-            answer=row['final_answer'],
-            context=row['context'],
-            ground_truth=row['gold_final_answer']
-        )
-        return result
-
-    def evaluate_row(row, pbar):
-        for evaluator in evaluators:
-            result = evaluate_row_with(row, evaluator)
-            row.update(result)
-            pbar.update(1)
-        return row
-
-    results = []
-    futures = []
-    with tqdm(total=len(data) * len(evaluators)) as pbar:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            for row in data:
-                futures.append(executor.submit(evaluate_row, row, pbar))
-            for future in as_completed(futures):
-                results.append(future.result())
-
-    return results
-
 if __name__ == "__main__":
     import time
     import jsonlines
 
-    log_setup()
     args = get_args()
 
     # Initialize Azure OpenAI Connection
@@ -188,11 +141,9 @@ if __name__ == "__main__":
     start=time.time()
     logger.info(f"Starting evaluate...")
 
-    modes = {"local": evaluate_local, "remote": evaluate_aistudio}
-    evaluate_func = modes[args.mode]
-    logger.info(f"Evaluating {args.input} with mode {args.mode}")
+    logger.info(f"Evaluating {args.input}")
     logger.info(f"Output file will be saved to {args.output}")
-    eval_result = evaluate_func(model_config=model_config, data_path=args.input, project_scope=project_scope, project_scope_report=project_scope_report)
+    eval_result = evaluate_aistudio(model_config=model_config, data_path=args.input, project_scope=project_scope, project_scope_report=project_scope_report)
 
     end=time.time()
     logger.info(f"Finished evaluate in {end - start}s")

@@ -1,0 +1,16 @@
+model_list: 
+  - model_name: llama3-70b # user-facing model alias
+    litellm_params: # all params accepted by litellm.completion() - https://docs.litellm.ai/docs/completion/input
+      model: openai/Meta-Llama-3-70B-Instruct
+      api_base: os.environ/LITELLM_1_OPENAI_BASE_URL
+      api_key: os.environ/LITELLM_1_OPENAI_API_KEY
+  - model_name: llama3-70b # user-facing model alias
+    litellm_params: # all params accepted by litellm.completion() - https://docs.litellm.ai/docs/completion/input
+      model: openai/Meta-Llama-3-70B-Instruct
+      api_base: os.environ/LITELLM_2_OPENAI_BASE_URL
+      api_key: os.environ/LITELLM_2_OPENAI_API_KEY
+  - model_name: llama3-70b # user-facing model alias
+    litellm_params: # all params accepted by litellm.completion() - https://docs.litellm.ai/docs/completion/input
+      model: openai/Meta-Llama-3-70B-Instruct
+      api_base: os.environ/LITELLM_3_OPENAI_BASE_URL
+      api_key: os.environ/LITELLM_3_OPENAI_API_KEY
