@@ -1,0 +1,46 @@
+id: bring_your_own_data_qna
+name: Bring Your Own Data QnA
+inputs:
+  question:
+    type: string
+    default: How to use SDK V2?
+    is_chat_input: false
+  context:
+    type: string
+    is_chat_input: false
+outputs:
+  answer:
+    type: string
+    reference: ${extract_final_answer.output}
+  explanation:
+    type: string
+    reference: ${llama2_7b_finetuned_model.output}
+nodes:
+- name: construct_prompt_with_context
+  type: prompt
+  source:
+    type: code
+    path: prompt.jinja2
+  inputs:
+    context: ${inputs.context}
+    question: ${inputs.question}
+  use_variants: false
+- name: llama2_7b_finetuned_model
+  type: python
+  source:
+    type: code
+    path: test_llm.py
+  inputs:
+    prompt: ${construct_prompt_with_context.output}
+  use_variants: false
+- name: extract_final_answer
+  type: python
+  source:
+    type: code
+    path: extract_final_answer.py
+  inputs:
+    cot_answer: ${llama2_7b_finetuned_model.output}
+  use_variants: false
+node_variants: {}
+environment:
+  python_requirements_txt: requirements.txt
