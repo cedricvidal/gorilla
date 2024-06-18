@@ -73,18 +73,22 @@ def evaluate_aistudio(model_config, project_scope, project_scope_report, data_pa
         azure_ai_project=project_scope_report,
         evaluators={
             "similarity": SimilarityEvaluator(model_config),
-            "groundedness": GroundednessEvaluator(project_scope=project_scope),
+            "groundedness": GroundednessEvaluator(model_config),
         },
         evaluator_config={
-            "defaults": {
+            "similarity": {
                 "question": "${data.question}",
-                "answer": "${target.answer}",
+                "answer": "${data.final_answer}",
                 "ground_truth": "${data.gold_final_answer}",
+                "context": "${data.context}",
+            },
+            "groundedness": {
+                "answer": "${data.final_answer}",
                 "context": "${data.context}",
             },
         },
     )
-    print(f"studio_url=f{result['studio_url']}")
+    print(f"studio_url={result['studio_url']}")
     return result
 
 def evaluate_local(model_config, project_scope, project_scope_report, data_path):
